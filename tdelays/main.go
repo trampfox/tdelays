@@ -9,6 +9,7 @@ import (
 	"regexp"
 
 	"github.com/aws/aws-lambda-go/events"
+	"github.com/aws/aws-lambda-go/lambda"
 )
 
 const (
@@ -17,10 +18,10 @@ const (
 )
 
 var trainsToCheck = map[string]string{
-	"18:05": "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/andamentoTreno/S08409/9638",
-	"18:10": "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/andamentoTreno/S01700/9742",
-	"18:45": "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/andamentoTreno/S09818/9336",
-	"19:00": "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/andamentoTreno/S09218/9544",
+	"18:05": "9638",
+	"18:10": "9742",
+	"18:45": "9336",
+	"19:00": "9544",
 }
 
 // Response is of type APIGatewayProxyResponse since we're leveraging the
@@ -42,8 +43,8 @@ func Handler(ctx context.Context) (Response, error) {
 	return getTrainInfo()
 }
 
-func getTrainCode(trainCode string) (string, error) {
-	resp, err := http.Get(fmt.Sprintf(trainCodeUrl, trainCode))
+func getTrainCode(trainNumber string) (string, error) {
+	resp, err := http.Get(fmt.Sprintf(trainCodeUrl, trainNumber))
 	if err != nil {
 		return "", err
 	}
@@ -72,11 +73,29 @@ func mapSubexpNames(m, n []string) map[string]string {
 	return subexpNamesMap
 }
 
+func retrieveTrainStatus(trainNumber string) (string, error) {
+	trainCode, err := getTrainCode(trainNumber)
+
+	resp, err := http.Get(fmt.Sprintf(trainStatusUrl, trainCode, trainNumber))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	var trainInfo TrainInfo
+	err = json.NewDecoder(resp.Body).Decode(&trainInfo)
+	if err != nil {
+		return "", err
+	}
+
+	return trainInfo.CompRitardo[0], nil
+}
+
 func getTrainInfo() (Response, error) {
 	trainResponse := make(map[string]string)
 
-	for trainDesc, trainUrl := range trainsToCheck {
-		trainStatus, err := retrieveTrainStatus(trainUrl)
+	for trainDesc, trainNumber := range trainsToCheck {
+		trainStatus, err := retrieveTrainStatus(trainNumber)
 		if err != nil {
 			fmt.Println(err)
 			trainStatus = "Not available"
@@ -101,24 +120,6 @@ func getTrainInfo() (Response, error) {
 	}, nil
 }
 
-func retrieveTrainStatus(trainUrl string) (string, error) {
-	resp, err := http.Get(fmt.Sprintf(trainUrl))
-	if err != nil {
-		return "", err
-	}
-	defer resp.Body.Close()
-
-	var trainInfo TrainInfo
-	err = json.NewDecoder(resp.Body).Decode(&trainInfo)
-	if err != nil {
-		return "", err
-	}
-
-	return trainInfo.CompRitardo[0], nil
-}
-
 func main() {
-	fmt.Println(getTrainCode("9638"))
-	// fmt.Println(getTrainInfo())
-	// lambda.Start(Handler)
+	lambda.Start(Handler)
 }
