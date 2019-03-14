@@ -4,14 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"regexp"
 
 	"github.com/aws/aws-lambda-go/events"
-	"github.com/aws/aws-lambda-go/lambda"
 )
 
 const (
-	infoUrl = "%s"
+	trainCodeUrl   = "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/cercaNumeroTrenoTrenoAutocomplete/%s"
+	trainStatusUrl = "http://www.viaggiatreno.it/viaggiatrenonew/resteasy/viaggiatreno/andamentoTreno/%s/%s"
 )
 
 var trainsToCheck = map[string]string{
@@ -38,6 +40,36 @@ type TrainResponse struct {
 // Handler is our lambda handler invoked by the `lambda.Start` function call
 func Handler(ctx context.Context) (Response, error) {
 	return getTrainInfo()
+}
+
+func getTrainCode(trainCode string) (string, error) {
+	resp, err := http.Get(fmt.Sprintf(trainCodeUrl, trainCode))
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	trainCodeResponse, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+
+	r := regexp.MustCompile(`(?P<InfoToDrop>[0-9]{4} - [a-zA-Z ]+\|[0-9]{4}-)(?P<TrainCode>[A-Z0-9]{6})`)
+	m := r.FindStringSubmatch(string(trainCodeResponse))
+	n := r.SubexpNames()
+
+	return mapSubexpNames(m, n)["TrainCode"], nil
+}
+
+func mapSubexpNames(m, n []string) map[string]string {
+	matches, names := m[1:], n[1:]
+	subexpNamesMap := make(map[string]string)
+
+	for i, _ := range matches {
+		subexpNamesMap[names[i]] = matches[i]
+	}
+
+	return subexpNamesMap
 }
 
 func getTrainInfo() (Response, error) {
@@ -86,6 +118,7 @@ func retrieveTrainStatus(trainUrl string) (string, error) {
 }
 
 func main() {
+	fmt.Println(getTrainCode("9638"))
 	// fmt.Println(getTrainInfo())
-	lambda.Start(Handler)
+	// lambda.Start(Handler)
 }
